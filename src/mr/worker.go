@@ -42,18 +42,20 @@ func ihash(key string) int {
 // 通过rpc调用获取任务
 //
 func getTask() Task {
-	task := Task{}
+	reply := Task{}
 	id := os.Getpid()
-	call("Coordinator.AssignTask", &id, &task)
-	return task
+	// fmt.Printf("before reply:%v, reply addr:%p\n", reply, &reply)
+	call("Coordinator.AssignTask", &id, &reply)
+	// fmt.Printf("after reply:%v, reply addr:%p\n", reply, &reply)
+	return reply
 }
 
 //
 // 通过rpc调用通知任务完成
 //
 func completeTask(paths []string, task *Task) {
-	copy(task.intermediates, paths)
-	call("Coordinator.CompleteTask", &ExampleArgs{}, &task)
+	copy(task.Intermediates, paths)
+	call("Coordinator.ComplateTask", &task, &ExampleReply{})
 }
 
 //
@@ -61,17 +63,18 @@ func completeTask(paths []string, task *Task) {
 //
 func excuteTask(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string, task Task) {
-	switch task.task_operate {
-	case to_map:
+	// fmt.Println("### task.task_file ###: ", task.Task_file)
+	switch task.Task_operate {
+	case To_map:
 		// 打开任务文件并读取进行map处理
-		filename := task.task_file[0] // 在map阶段暂时只支持一个任务中有一个输入文件
+		filename := task.Task_file[0] // 在map阶段暂时只支持一个任务中有一个输入文件
 		file, err := os.Open(filename)
 		if err != nil {
-			log.Fatalf("cannot open %v", filename)
+			log.Fatalf("map cannot open %v", filename)
 		}
 		content, err := ioutil.ReadAll(file)
 		if err != nil {
-			log.Fatalf("cannot read %v", filename)
+			log.Fatalf("map cannot read %v", filename)
 		}
 		file.Close()
 		kvlist := mapf(filename, string(content))
@@ -85,8 +88,8 @@ func excuteTask(mapf func(string, string) []KeyValue,
 
 		intermediates := make([]string, 0)
 		// 创建"mr-out-task_id-slot.json"文件并写入
-		for i := 0; i <= task.NReduce; i++ {
-			output_path := fmt.Sprintf("mr-out-%d-%d.json", task.task_id, i)
+		for i := 0; i < task.NReduce; i++ {
+			output_path := fmt.Sprintf("mr-inter-%d-%d.json", task.Task_id, i)
 			filePtr, err := os.Create(output_path)
 			if err != nil {
 				fmt.Println("文件创建失败", err.Error())
@@ -106,14 +109,14 @@ func excuteTask(mapf func(string, string) []KeyValue,
 		}
 		completeTask(intermediates, &task)
 
-	case to_reduce:
+	case To_reduce:
 		// 从bucket中的所有中间文件中取出所有keyvalue对
-		filenames := task.task_file
+		filenames := task.Task_file
 		kvlist := make([]KeyValue, 0)
 		for _, filename := range filenames {
 			file, err := os.Open(filename)
 			if err != nil {
-				log.Fatalf("cannot open %v", filename)
+				log.Fatalf("reduce cannot open %v", filename)
 			}
 			dec := json.NewDecoder(file)
 			for {
@@ -127,10 +130,10 @@ func excuteTask(mapf func(string, string) []KeyValue,
 		}
 		sort.Sort(ByKey(kvlist))
 		i := 0
-		output_filename := fmt.Sprintf("mr-out-%d.txt", task.reduce_bucket)
-		output_file, err := os.Open(output_filename)
+		output_filename := fmt.Sprintf("mr-out-%d.txt", task.Reduce_bucket)
+		output_file, err := os.Create(output_filename)
 		if err != nil {
-			log.Fatalf("cannot open %v", output_filename)
+			log.Fatalf("cannot create %v", output_filename)
 		}
 		// 输出到mr-out-bucket_id.txt
 		for i < len(kvlist) {
@@ -162,11 +165,12 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 
 	task := Task{
-		task_id: -1,
+		Task_id: -1,
 	}
 	for i := 0; i >= 0; i++ {
 		task = getTask()
-		if task.task_id != -1 {
+		// fmt.Println(task)
+		if task.Task_id != -1 {
 			excuteTask(mapf, reducef, task)
 		} else {
 			time.Sleep(time.Second)
@@ -212,6 +216,7 @@ func CallExample() {
 //
 func call(rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
+
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
