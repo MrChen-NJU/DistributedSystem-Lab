@@ -19,6 +19,8 @@ type TaskOperate uint32
 const (
 	To_map TaskOperate = iota
 	To_reduce
+	To_exit
+	To_wait
 )
 
 type TaskState uint32
@@ -121,7 +123,7 @@ func (c *Coordinator) AssignTask(args *int, reply *Task) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 	worker_id := *args
-	if c.Task_queue.Len() > 0 {
+	if c.Phase != EXIT && c.Task_queue.Len() > 0 {
 		// fmt.Printf("=== Assign task length: %d, Phase: %d\n", c.Task_queue.Len(), c.Phase)
 		if c.Phase == MAP && c.Task_queue.Front().Value.(Task).Task_operate == To_map {
 			// coordinator阶段为MAP且任务队列里的任务为map任务
@@ -146,14 +148,14 @@ func (c *Coordinator) AssignTask(args *int, reply *Task) error {
 
 			(*reply).Task_worker = worker_id
 			(*reply).Start_time = time.Now()
-		} else {
-			*reply = Task{
-				Task_id: -1,
-			}
+		}
+	} else if c.Phase == EXIT {
+		*reply = Task{
+			Task_operate: To_exit,
 		}
 	} else {
 		*reply = Task{
-			Task_id: -1,
+			Task_operate: To_wait,
 		}
 	}
 	return nil
@@ -234,9 +236,10 @@ func (c *Coordinator) Done() bool {
 	mutex.Lock()
 	defer mutex.Unlock()
 	ret := c.Phase == EXIT
-
-	// Your code here.
-
+	if ret {
+		time.Sleep(3 * time.Second)
+		//fmt.Println("The program is finished, exiting... :)")
+	}
 	return ret
 }
 

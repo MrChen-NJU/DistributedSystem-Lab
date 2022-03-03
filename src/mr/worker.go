@@ -129,12 +129,13 @@ func excuteTask(mapf func(string, string) []KeyValue,
 			file.Close()
 		}
 		sort.Sort(ByKey(kvlist))
-		i := 0
-		output_filename := fmt.Sprintf("mr-out-%d.txt", task.Reduce_bucket)
-		output_file, err := os.Create(output_filename)
+		dir, _ := os.Getwd()
+		tempFile, err := ioutil.TempFile(dir, "mr-tmp-*")
 		if err != nil {
-			log.Fatalf("cannot create %v", output_filename)
+			log.Fatal("Fail to create temp file", err)
 		}
+		i := 0
+
 		// 输出到mr-out-bucket_id.txt
 		for i < len(kvlist) {
 			j := i + 1
@@ -147,12 +148,13 @@ func excuteTask(mapf func(string, string) []KeyValue,
 			}
 			output := reducef(kvlist[i].Key, values)
 			// this is the correct format for each line of Reduce output.
-			fmt.Fprintf(output_file, "%v %v\n", kvlist[i].Key, output)
+			fmt.Fprintf(tempFile, "%v %v\n", kvlist[i].Key, output)
 			i = j
 		}
-		output_file.Close()
-		tmp := []string{}
-		tmp = append(tmp, output_filename)
+		tempFile.Close()
+		output_filename := fmt.Sprintf("mr-out-%d.txt", task.Reduce_bucket)
+		os.Rename(tempFile.Name(), output_filename)
+		tmp := []string{output_filename}
 		completeTask(tmp, &task)
 	}
 }
@@ -170,10 +172,12 @@ func Worker(mapf func(string, string) []KeyValue,
 	for i := 0; i >= 0; i++ {
 		task = getTask()
 		// fmt.Println(task)
-		if task.Task_id != -1 {
-			excuteTask(mapf, reducef, task)
-		} else {
+		if task.Task_operate == To_wait {
 			time.Sleep(time.Second)
+		} else if task.Task_operate == To_exit {
+			os.Exit(0)
+		} else {
+			excuteTask(mapf, reducef, task)
 		}
 	}
 	// uncomment to send the Example RPC to the coordinator.
