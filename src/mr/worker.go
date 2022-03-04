@@ -129,14 +129,9 @@ func excuteTask(mapf func(string, string) []KeyValue,
 			file.Close()
 		}
 		sort.Sort(ByKey(kvlist))
-		dir, _ := os.Getwd()
-		tempFile, err := ioutil.TempFile(dir, "mr-tmp-*")
-		if err != nil {
-			log.Fatal("Fail to create temp file", err)
-		}
-		i := 0
 
-		// 输出到mr-out-bucket_id.txt
+		key_outlist := make([]KeyValue, 0)
+		i := 0
 		for i < len(kvlist) {
 			j := i + 1
 			for j < len(kvlist) && kvlist[j].Key == kvlist[i].Key {
@@ -148,8 +143,20 @@ func excuteTask(mapf func(string, string) []KeyValue,
 			}
 			output := reducef(kvlist[i].Key, values)
 			// this is the correct format for each line of Reduce output.
-			fmt.Fprintf(tempFile, "%v %v\n", kvlist[i].Key, output)
+			key_outlist = append(key_outlist, KeyValue{
+				Key:   kvlist[i].Key,
+				Value: output,
+			})
 			i = j
+		}
+		// 输出到mr-out-bucket_id.txt
+		dir, _ := os.Getwd()
+		tempFile, err := ioutil.TempFile(dir, "mr-tmp-*")
+		if err != nil {
+			log.Fatal("Failed to create temp file", err)
+		}
+		for _, kv := range key_outlist {
+			fmt.Fprintf(tempFile, "%v %v\n", kv.Key, kv.Value)
 		}
 		tempFile.Close()
 		output_filename := fmt.Sprintf("mr-out-%d.txt", task.Reduce_bucket)
